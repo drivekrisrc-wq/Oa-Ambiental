@@ -1473,18 +1473,9 @@
 
 <script>
 // =================== DATOS ===================
-let registros = [
-  { folio:'OA-2026-0040', area:'Almacén RP', tipo:'Incorrecta Segregación RP', fecha:'10 Mar 2026', hora:'09:14', estatus:'abierta', notas:'Residuos peligrosos mezclados con basura general.', foto: '' },
-  { folio:'OA-2026-0041', area:'Taller Mecánico', tipo:'Contaminación al Suelo — DERRAME', fecha:'10 Mar 2026', hora:'11:32', estatus:'abierta', notas:'Derrame de aceite hidráulico cerca del torno principal.', foto: '' },
-  { folio:'OA-2026-0039', area:'Patio Central', tipo:'Orden y Limpieza', fecha:'07 Mar 2026', hora:'08:45', estatus:'cerrada', notas:'', foto: '' },
-  { folio:'OA-2026-0038', area:'Segregación RME', tipo:'Incorrecta Segregación RME', fecha:'05 Mar 2026', hora:'14:20', estatus:'cerrada', notas:'Cartón en contenedor de vidrio.', foto: '' },
-  { folio:'OA-2026-0037', area:'Compresores', tipo:'Agotamiento de Recursos — FUGA', fecha:'03 Mar 2026', hora:'10:05', estatus:'cerrada', notas:'Fuga en válvula de compresor #3.', foto: '' },
-  { folio:'OA-2026-0036', area:'Área Producción', tipo:'Movimiento de Residuos', fecha:'01 Mar 2026', hora:'16:30', estatus:'abierta', notas:'', foto: '' },
-  { folio:'OA-2026-0035', area:'Planta Tratamiento', tipo:'Contaminación al Suelo — DERRAME', fecha:'28 Feb 2026', hora:'07:55', estatus:'cerrada', notas:'', foto: '' },
-  { folio:'OA-2026-0034', area:'Transformadores', tipo:'Agotamiento de Recursos — FUGA', fecha:'25 Feb 2026', hora:'13:10', estatus:'cerrada', notas:'', foto: '' },
-];
-
-let folioCounter = 43;
+// Cargar datos desde localStorage
+let registros = JSON.parse(localStorage.getItem('oa_registros') || '[]');
+let folioCounter = parseInt(localStorage.getItem('oa_folioCounter') || '1');
 let currentDetalle = null;
 let nuevoEstatus = null;
 let filterActual = 'todos';
@@ -1689,6 +1680,9 @@ function guardarOA() {
   };
 
   registros.unshift(nuevo);
+  // Guardar en localStorage
+  localStorage.setItem('oa_registros', JSON.stringify(registros));
+  localStorage.setItem('oa_folioCounter', folioCounter);
   updateStats();
   showToast('✓ OA ' + nuevoFolio + ' registrada correctamente');
 
@@ -1822,6 +1816,8 @@ function guardarEstatus() {
   if (!currentDetalle || !nuevoEstatus) return;
   const reg = registros.find(r=>r.folio===currentDetalle.folio);
   if (reg) reg.estatus = nuevoEstatus;
+  // Guardar en localStorage
+  localStorage.setItem('oa_registros', JSON.stringify(registros));
   updateStats();
   showToast('✓ Estatus actualizado a: ' + (nuevoEstatus==='abierta'?'Abierta':'Cerrada'));
   setTimeout(()=>goBack('screenDetalle','screenPasados'),900);
