@@ -908,6 +908,42 @@
     gap:4px;
   }
 
+  .reg-card-footer {
+    padding: 10px 14px;
+    border-top: 1px solid var(--light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .btn-ver-detalle {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--blue);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Barlow', sans-serif;
+    padding: 4px 0;
+  }
+
+  .btn-eliminar-oa {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--red);
+    background: var(--red-soft);
+    border: 1px solid rgba(220,38,38,0.2);
+    border-radius: 8px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-family: 'Barlow', sans-serif;
+    transition: all 0.15s;
+  }
+
+  .btn-eliminar-oa:hover { background: rgba(220,38,38,0.15); }
+
   .reg-img-thumb {
     width:100%;
     height:80px;
@@ -1472,13 +1508,72 @@
 </div>
 
 <script>
+// =================== LOCALSTORAGE ===================
+const STORAGE_KEY = 'tng_oa_registros';
+const FOLIO_KEY   = 'tng_oa_folio';
+
+function comprimirFoto(base64, calidad = 0.4) {
+  return new Promise(resolve => {
+    if (!base64 || base64 === '[foto]' || !base64.startsWith('data:image')) {
+      resolve(base64); return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX = 600;
+      let w = img.width, h = img.height;
+      if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', calidad));
+    };
+    img.onerror = () => resolve('[foto]');
+    img.src = base64;
+  });
+}
+
+async function guardarEnStorage() {
+  try {
+    const comprimidos = await Promise.all(registros.map(async r => {
+      const fotos = await Promise.all((r.fotos || []).map(f => comprimirFoto(f)));
+      const foto  = await comprimirFoto(r.foto);
+      return { ...r, fotos, foto };
+    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(comprimidos));
+    localStorage.setItem(FOLIO_KEY, String(folioCounter));
+  } catch(e) {
+    // Si aún así está lleno, guardar sin fotos
+    try {
+      const sinFotos = registros.map(r => ({ ...r, fotos: [], foto: '' }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sinFotos));
+      localStorage.setItem(FOLIO_KEY, String(folioCounter));
+      showToast('⚠️ Registros guardados sin fotos (memoria llena)');
+    } catch(e2) {
+      showToast('⚠️ No se pudo guardar. Memoria del dispositivo llena.');
+    }
+  }
+}
+
+function cargarDeStorage() {
+  try {
+    const raw   = localStorage.getItem(STORAGE_KEY);
+    const folio = localStorage.getItem(FOLIO_KEY);
+    if (raw) registros = JSON.parse(raw);
+    if (folio) folioCounter = parseInt(folio);
+  } catch(e) {
+    console.warn('Error al leer localStorage:', e);
+  }
+}
+
 // =================== DATOS ===================
-// Cargar datos desde localStorage
-let registros = JSON.parse(localStorage.getItem('oa_registros') || '[]');
-let folioCounter = parseInt(localStorage.getItem('oa_folioCounter') || '1');
+let registros = [];
+let folioCounter = 1;
 let currentDetalle = null;
 let nuevoEstatus = null;
 let filterActual = 'todos';
+
+// Cargar datos guardados al iniciar
+cargarDeStorage();
 
 // =================== NAVEGACIÓN ===================
 function goTo(from, to) {
@@ -1680,9 +1775,7 @@ function guardarOA() {
   };
 
   registros.unshift(nuevo);
-  // Guardar en localStorage
-  localStorage.setItem('oa_registros', JSON.stringify(registros));
-  localStorage.setItem('oa_folioCounter', folioCounter);
+  guardarEnStorage();
   updateStats();
   showToast('✓ OA ' + nuevoFolio + ' registrada correctamente');
 
@@ -1731,23 +1824,68 @@ function renderRegistros() {
   const filtrados = filterActual==='todos' ? registros : registros.filter(r=>r.estatus===filterActual);
   document.getElementById('pasadosSub').textContent = filtrados.length + ' observaciones';
 
-  lista.innerHTML = filtrados.map((r,i) => `
-    <div class="reg-card" onclick="verDetalle('${r.folio}')">
-      <div class="reg-card-head">
+  lista.innerHTML = filtrados.length === 0
+    ? `<div style="text-align:center;padding:50px 20px;color:var(--mid)">
+        <div style="font-size:48px;margin-bottom:12px">📋</div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px">Sin registros</div>
+        <div style="font-size:13px">Aún no hay OAs registradas</div>
+      </div>`
+    : filtrados.map((r) => `
+    <div class="reg-card" id="regcard-${r.folio}">
+      <div class="reg-card-head" onclick="verDetalle('${r.folio}')">
         <div class="status-dot ${r.estatus}"></div>
         <div class="reg-folio">${r.folio}</div>
         <div class="reg-status-badge ${r.estatus}">${r.estatus==='abierta'?'Abierta':'Cerrada'}</div>
       </div>
-      <div class="reg-card-body">
+      <div class="reg-card-body" onclick="verDetalle('${r.folio}')">
         <div class="reg-tipo">${r.tipo}</div>
         <div class="reg-meta">
           <div class="reg-meta-item">📍 ${r.area}</div>
           <div class="reg-meta-item">📅 ${r.fecha} ${r.hora}</div>
         </div>
       </div>
-      ${r.foto ? `<img class="reg-img-thumb" src="${r.foto}" style="display:block">` : ''}
+      ${r.foto ? `<img class="reg-img-thumb" src="${r.foto}" style="display:block" onclick="verDetalle('${r.folio}')">` : ''}
+      <div class="reg-card-footer">
+        <button class="btn-ver-detalle" onclick="verDetalle('${r.folio}')">Ver detalle →</button>
+        <button class="btn-eliminar-oa" onclick="confirmarEliminar('${r.folio}', event)">🗑 Eliminar</button>
+      </div>
     </div>
   `).join('');
+}
+
+function confirmarEliminar(folio, e) {
+  e.stopPropagation();
+  const card = document.getElementById('regcard-' + folio);
+  // Mostrar confirmación inline en la tarjeta
+  const footer = card.querySelector('.reg-card-footer');
+  footer.innerHTML = `
+    <span style="font-size:12px;color:var(--red);font-weight:600;">¿Eliminar esta OA?</span>
+    <div style="display:flex;gap:8px">
+      <button class="btn-eliminar-oa" onclick="eliminarOA('${folio}')">Sí, eliminar</button>
+      <button class="btn-ver-detalle" onclick="cancelarEliminar('${folio}')">Cancelar</button>
+    </div>
+  `;
+  footer.style.background = 'rgba(220,38,38,0.05)';
+  footer.style.borderTop = '1px solid rgba(220,38,38,0.2)';
+}
+
+function cancelarEliminar(folio) {
+  const card = document.getElementById('regcard-' + folio);
+  const footer = card.querySelector('.reg-card-footer');
+  footer.innerHTML = `
+    <button class="btn-ver-detalle" onclick="verDetalle('${folio}')">Ver detalle →</button>
+    <button class="btn-eliminar-oa" onclick="confirmarEliminar('${folio}', event)">🗑 Eliminar</button>
+  `;
+  footer.style.background = '';
+  footer.style.borderTop = '';
+}
+
+function eliminarOA(folio) {
+  registros = registros.filter(r => r.folio !== folio);
+  guardarEnStorage();
+  updateStats();
+  renderRegistros();
+  showToast('🗑 OA ' + folio + ' eliminada');
 }
 
 function filterReg(tipo, el) {
@@ -1816,8 +1954,7 @@ function guardarEstatus() {
   if (!currentDetalle || !nuevoEstatus) return;
   const reg = registros.find(r=>r.folio===currentDetalle.folio);
   if (reg) reg.estatus = nuevoEstatus;
-  // Guardar en localStorage
-  localStorage.setItem('oa_registros', JSON.stringify(registros));
+  guardarEnStorage();
   updateStats();
   showToast('✓ Estatus actualizado a: ' + (nuevoEstatus==='abierta'?'Abierta':'Cerrada'));
   setTimeout(()=>goBack('screenDetalle','screenPasados'),900);
