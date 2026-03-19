@@ -1120,7 +1120,27 @@
 
   .toast.show { opacity:1; transform:translateX(-50%) translateY(-4px); }
 
-  #fotoInput { display:none; }
+  .btn-pdf {
+    width: 100%;
+    background: var(--navy);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    padding: 16px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .btn-pdf:hover { background: var(--blue); transform: translateY(-1px); }
 </style>
 </head>
 <body>
@@ -1499,6 +1519,12 @@
           <button class="btn-guardar-estatus" onclick="guardarEstatus()">Guardar Cambio de Estatus</button>
         </div>
       </div>
+
+      <!-- Descargar PDF -->
+      <button class="btn-pdf" onclick="generarPDF()">
+        <span style="font-size:18px">📄</span> Descargar PDF
+      </button>
+
     </div>
   </div>
 
@@ -1508,6 +1534,41 @@
 </div>
 
 <script>
+// =================== PRIORIDADES ===================
+const PRIORIDADES = {
+  'Incorrecta Segregación RP':          { nivel:'Alto',      diasLimite:1, color:'#DC2626', bg:'rgba(220,38,38,0.1)',   emoji:'🔴' },
+  'Incorrecta Segregación RME':         { nivel:'Bajo',      diasLimite:4, color:'#16A34A', bg:'rgba(22,163,74,0.1)',   emoji:'🟢' },
+  'Incorrecto Almacenaje de Materiales':{ nivel:'Medio',     diasLimite:2, color:'#D97706', bg:'rgba(217,119,6,0.1)',   emoji:'🟡' },
+  'Orden y Limpieza':                   { nivel:'Medio',     diasLimite:2, color:'#D97706', bg:'rgba(217,119,6,0.1)',   emoji:'🟡' },
+  'Movimiento de Residuos':             { nivel:'Bajo',      diasLimite:4, color:'#16A34A', bg:'rgba(22,163,74,0.1)',   emoji:'🟢' },
+  'Contaminación al Suelo — DERRAME':   { nivel:'Inmediato', diasLimite:0, color:'#7C3AED', bg:'rgba(124,58,237,0.1)', emoji:'🚨' },
+  'Agotamiento de Recursos — FUGA':     { nivel:'Alto',      diasLimite:1, color:'#DC2626', bg:'rgba(220,38,38,0.1)',   emoji:'🔴' },
+};
+
+function getPrioridad(tipo) {
+  return PRIORIDADES[tipo] || { nivel:'—', diasLimite:null, color:'#6B7B9A', bg:'rgba(107,123,154,0.1)', emoji:'⚪' };
+}
+
+function calcFechaLimite(fechaAperturaISO, diasLimite) {
+  if (diasLimite === null) return '—';
+  if (diasLimite === 0) return 'Inmediato';
+  const d = new Date(fechaAperturaISO);
+  d.setDate(d.getDate() + diasLimite);
+  return d.toLocaleDateString('es-MX', { day:'numeric', month:'short', year:'numeric' });
+}
+
+function calcDiasDesviacion(fechaAperturaISO, fechaCierreISO) {
+  const inicio = new Date(fechaAperturaISO);
+  const fin = fechaCierreISO ? new Date(fechaCierreISO) : new Date();
+  const diff = Math.floor((fin - inicio) / (1000 * 60 * 60 * 24));
+  return diff;
+}
+
+function formatFechaISO(isoStr) {
+  if (!isoStr) return '—';
+  return new Date(isoStr).toLocaleDateString('es-MX', { day:'numeric', month:'short', year:'numeric' });
+}
+
 // =================== LOCALSTORAGE ===================
 const STORAGE_KEY = 'tng_oa_registros';
 const FOLIO_KEY   = 'tng_oa_folio';
@@ -1558,7 +1619,18 @@ function cargarDeStorage() {
   try {
     const raw   = localStorage.getItem(STORAGE_KEY);
     const folio = localStorage.getItem(FOLIO_KEY);
-    if (raw) registros = JSON.parse(raw);
+    if (raw) {
+      registros = JSON.parse(raw);
+      // Migración: agregar fechaAperturaISO a registros viejos que no la tienen
+      registros = registros.map(r => {
+        if (!r.fechaAperturaISO) {
+          // Intentar reconstruir desde el campo fecha texto, si no usar fecha actual
+          r.fechaAperturaISO = new Date().toISOString();
+        }
+        if (r.fechaCierreISO === undefined) r.fechaCierreISO = null;
+        return r;
+      });
+    }
     if (folio) folioCounter = parseInt(folio);
   } catch(e) {
     console.warn('Error al leer localStorage:', e);
@@ -1667,6 +1739,23 @@ function selInc(el, tipo) {
   document.querySelectorAll('.inc-item').forEach(i=>i.classList.remove('sel'));
   el.classList.add('sel');
   fState.inc = tipo;
+
+  // Mostrar badge de prioridad
+  const prio = getPrioridad(tipo);
+  const existing = document.getElementById('prioBadge');
+  if (existing) existing.remove();
+  const badge = document.createElement('div');
+  badge.id = 'prioBadge';
+  badge.style.cssText = `margin-top:10px;display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;background:${prio.bg};border:1px solid ${prio.color}30`;
+  badge.innerHTML = `
+    <span style="font-size:18px">${prio.emoji}</span>
+    <div>
+      <div style="font-size:12px;font-weight:700;color:${prio.color}">${prio.nivel}</div>
+      <div style="font-size:11px;color:var(--mid)">Tiempo de atención: ${prio.diasLimite === 0 ? 'Inmediato' : prio.diasLimite + ' día' + (prio.diasLimite!==1?'s':'')}</div>
+    </div>
+  `;
+  el.closest('.fcard-body').appendChild(badge);
+
   document.getElementById('chk3').classList.add('on');
   document.getElementById('fc4').classList.remove('locked');
   checkForm();
@@ -1762,13 +1851,20 @@ function guardarOA() {
   const nuevoFolio = 'OA-2026-' + String(folioCounter).padStart(4,'0');
   folioCounter++;
 
+  const tipo = fState.inc;
+  const prio = getPrioridad(tipo);
+
   const nuevo = {
     folio: nuevoFolio,
     area: fState.area,
-    tipo: fState.inc,
+    tipo: tipo,
+    nivel: prio.nivel,
+    diasLimite: prio.diasLimite,
+    fechaAperturaISO: now.toISOString(),
     fecha: now.toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'}),
     hora: now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
     estatus: 'abierta',
+    fechaCierreISO: null,
     notas: document.getElementById('notasTa').value,
     fotos: fState.fotos.filter(Boolean),
     foto: fState.fotos[0] || ''
@@ -1790,6 +1886,7 @@ function resetNuevo() {
   fState = {area:null,inc:null,foto:false,fotos:[null,null,null,null,null]};
   document.querySelectorAll('.area-list-item').forEach(b=>b.classList.remove('sel'));
   document.querySelectorAll('.inc-item').forEach(i=>i.classList.remove('sel'));
+  const pb = document.getElementById('prioBadge'); if(pb) pb.remove();
   for(let i=0;i<5;i++){
     document.getElementById('fotoImg'+i).src='';
     document.getElementById('slot'+i).classList.remove('filled');
@@ -1830,7 +1927,12 @@ function renderRegistros() {
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px">Sin registros</div>
         <div style="font-size:13px">Aún no hay OAs registradas</div>
       </div>`
-    : filtrados.map((r) => `
+    : filtrados.map((r) => {
+      const prio = getPrioridad(r.tipo);
+      const fechaLimite = calcFechaLimite(r.fechaAperturaISO, r.diasLimite ?? prio.diasLimite);
+      const diasDesv = r.fechaAperturaISO ? calcDiasDesviacion(r.fechaAperturaISO, r.fechaCierreISO) : '—';
+      const vencida = r.estatus === 'abierta' && r.fechaAperturaISO && (r.diasLimite ?? prio.diasLimite) !== null && diasDesv > (r.diasLimite ?? prio.diasLimite);
+      return `
     <div class="reg-card" id="regcard-${r.folio}">
       <div class="reg-card-head" onclick="verDetalle('${r.folio}')">
         <div class="status-dot ${r.estatus}"></div>
@@ -1839,9 +1941,19 @@ function renderRegistros() {
       </div>
       <div class="reg-card-body" onclick="verDetalle('${r.folio}')">
         <div class="reg-tipo">${r.tipo}</div>
+        <div style="margin:6px 0 4px">
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:${prio.bg};color:${prio.color}">
+            ${prio.emoji} ${prio.nivel}
+          </span>
+          ${vencida ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(220,38,38,0.1);color:#DC2626;margin-left:5px">⏰ Vencida</span>` : ''}
+        </div>
         <div class="reg-meta">
           <div class="reg-meta-item">📍 ${r.area}</div>
           <div class="reg-meta-item">📅 ${r.fecha} ${r.hora}</div>
+        </div>
+        <div class="reg-meta" style="margin-top:4px">
+          <div class="reg-meta-item">⏳ Límite: ${fechaLimite}</div>
+          <div class="reg-meta-item">📆 Días: ${diasDesv}</div>
         </div>
       </div>
       ${r.foto ? `<img class="reg-img-thumb" src="${r.foto}" style="display:block" onclick="verDetalle('${r.folio}')">` : ''}
@@ -1850,7 +1962,7 @@ function renderRegistros() {
         <button class="btn-eliminar-oa" onclick="confirmarEliminar('${r.folio}', event)">🗑 Eliminar</button>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function confirmarEliminar(folio, e) {
@@ -1900,20 +2012,55 @@ function verDetalle(folio) {
   currentDetalle = registros.find(r=>r.folio===folio);
   if (!currentDetalle) return;
 
-  document.getElementById('detalleFolioTitle').textContent = currentDetalle.folio;
-  document.getElementById('detalleStatusSub').textContent = currentDetalle.estatus==='abierta'?'🟡 Abierta':'🟢 Cerrada';
+  const r = currentDetalle;
+  const prio = getPrioridad(r.tipo);
+  const fechaLimite = calcFechaLimite(r.fechaAperturaISO, r.diasLimite ?? prio.diasLimite);
+  const diasDesv = r.fechaAperturaISO ? calcDiasDesviacion(r.fechaAperturaISO, r.fechaCierreISO) : '—';
+  const vencida = r.estatus === 'abierta' && diasDesv > (r.diasLimite ?? prio.diasLimite);
+
+  document.getElementById('detalleFolioTitle').textContent = r.folio;
+  document.getElementById('detalleStatusSub').textContent = r.estatus==='abierta'?'🟡 Abierta':'🟢 Cerrada';
 
   document.getElementById('detalleInfo').innerHTML = `
-    <div class="detalle-row"><span class="dr-key">Área</span><span class="dr-val">${currentDetalle.area}</span></div>
-    <div class="detalle-row"><span class="dr-key">Incumplimiento</span><span class="dr-val">${currentDetalle.tipo}</span></div>
-    <div class="detalle-row"><span class="dr-key">Fecha</span><span class="dr-val">${currentDetalle.fecha}</span></div>
-    <div class="detalle-row"><span class="dr-key">Hora</span><span class="dr-val">${currentDetalle.hora}</span></div>
-    ${currentDetalle.notas ? `<div class="detalle-row"><span class="dr-key">Notas</span><span class="dr-val" style="max-width:200px">${currentDetalle.notas}</span></div>` : ''}
+    <div class="detalle-row">
+      <span class="dr-key">Área</span>
+      <span class="dr-val">${r.area}</span>
+    </div>
+    <div class="detalle-row">
+      <span class="dr-key">Incumplimiento</span>
+      <span class="dr-val" style="max-width:200px;text-align:right">${r.tipo}</span>
+    </div>
+    <div class="detalle-row">
+      <span class="dr-key">Nivel</span>
+      <span class="dr-val">
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 12px;border-radius:20px;background:${prio.bg};color:${prio.color}">
+          ${prio.emoji} ${prio.nivel}
+        </span>
+      </span>
+    </div>
+    <div class="detalle-row">
+      <span class="dr-key">Fecha apertura</span>
+      <span class="dr-val">${r.fecha} ${r.hora}</span>
+    </div>
+    <div class="detalle-row">
+      <span class="dr-key">Fecha límite</span>
+      <span class="dr-val" style="color:${vencida?'#DC2626':'inherit'};font-weight:${vencida?'700':'600'}">${fechaLimite} ${vencida?'⏰':''}
+      </span>
+    </div>
+    <div class="detalle-row">
+      <span class="dr-key">Fecha cierre</span>
+      <span class="dr-val">${r.fechaCierreISO ? formatFechaISO(r.fechaCierreISO) : '—'}</span>
+    </div>
+    <div class="detalle-row">
+      <span class="dr-key">Días de desviación</span>
+      <span class="dr-val" style="color:${vencida?'#DC2626':'inherit'}">${diasDesv} día${diasDesv!==1?'s':''}</span>
+    </div>
+    ${r.notas ? `<div class="detalle-row"><span class="dr-key">Notas</span><span class="dr-val" style="max-width:200px;text-align:right">${r.notas}</span></div>` : ''}
   `;
 
   const fotoCard = document.getElementById('detalleFotoCard');
   const fotosBody = document.getElementById('detalleFotosBody');
-  const fotos = currentDetalle.fotos && currentDetalle.fotos.length ? currentDetalle.fotos : (currentDetalle.foto ? [currentDetalle.foto] : []);
+  const fotos = r.fotos && r.fotos.length ? r.fotos : (r.foto ? [r.foto] : []);
   if (fotos.length) {
     fotoCard.style.display='block';
     fotosBody.innerHTML = fotos.map((src,i) => `
@@ -1928,13 +2075,13 @@ function verDetalle(folio) {
 
   const dot = document.getElementById('detalleDot');
   const val = document.getElementById('detalleEstatusVal');
-  dot.className = 'status-dot ' + currentDetalle.estatus;
-  val.className = 'ec-val ' + currentDetalle.estatus;
-  val.textContent = currentDetalle.estatus==='abierta'?'Abierta':'Cerrada';
+  dot.className = 'status-dot ' + r.estatus;
+  val.className = 'ec-val ' + r.estatus;
+  val.textContent = r.estatus==='abierta'?'Abierta':'Cerrada';
 
-  nuevoEstatus = currentDetalle.estatus;
-  document.getElementById('btnEstatusAbierta').classList.toggle('active', currentDetalle.estatus==='abierta');
-  document.getElementById('btnEstatusCerrada').classList.toggle('active', currentDetalle.estatus==='cerrada');
+  nuevoEstatus = r.estatus;
+  document.getElementById('btnEstatusAbierta').classList.toggle('active', r.estatus==='abierta');
+  document.getElementById('btnEstatusCerrada').classList.toggle('active', r.estatus==='cerrada');
 
   goTo('screenPasados','screenDetalle');
 }
@@ -1953,11 +2100,160 @@ function selEstatus(est, el) {
 function guardarEstatus() {
   if (!currentDetalle || !nuevoEstatus) return;
   const reg = registros.find(r=>r.folio===currentDetalle.folio);
-  if (reg) reg.estatus = nuevoEstatus;
+  if (reg) {
+    reg.estatus = nuevoEstatus;
+    if (nuevoEstatus === 'cerrada' && !reg.fechaCierreISO) {
+      reg.fechaCierreISO = new Date().toISOString();
+    } else if (nuevoEstatus === 'abierta') {
+      reg.fechaCierreISO = null;
+    }
+  }
   guardarEnStorage();
   updateStats();
   showToast('✓ Estatus actualizado a: ' + (nuevoEstatus==='abierta'?'Abierta':'Cerrada'));
   setTimeout(()=>goBack('screenDetalle','screenPasados'),900);
+}
+
+// =================== GENERAR PDF ===================
+function generarPDF() {
+  if (!currentDetalle) return;
+  const r = currentDetalle;
+  const prio = getPrioridad(r.tipo);
+  const fechaLimite = calcFechaLimite(r.fechaAperturaISO, r.diasLimite ?? prio.diasLimite);
+  const diasDesv = r.fechaAperturaISO ? calcDiasDesviacion(r.fechaAperturaISO, r.fechaCierreISO) : '—';
+  const fotos = (r.fotos && r.fotos.length) ? r.fotos : (r.foto ? [r.foto] : []);
+
+  // Logo SVG de TNG en base64 equivalente (dibujado en SVG inline)
+  const logoSVG = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <div style="width:28px;height:18px;background:#2B7EC1;border-radius:2px 2px 0 0;position:relative;overflow:hidden">
+          <div style="position:absolute;bottom:0;right:0;width:0;height:0;border-style:solid;border-width:0 0 18px 18px;border-color:transparent transparent white transparent"></div>
+        </div>
+        <div style="width:28px;height:18px;background:#0D2B5E;border-radius:0 0 2px 2px;position:relative;overflow:hidden">
+          <div style="position:absolute;top:0;left:0;width:0;height:0;border-style:solid;border-width:18px 18px 0 0;border-color:white transparent transparent transparent"></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:9px;font-weight:700;color:#0D2B5E;letter-spacing:1px;font-family:Arial">HUTCHISON<span style="color:#2B7EC1">PORTS</span></div>
+        <div style="font-size:20px;font-weight:900;color:#0D2B5E;line-height:1;font-family:Arial">TNG</div>
+      </div>
+    </div>
+  `;
+
+  // Fotos HTML — máx 2 por fila
+  let fotosHTML = '';
+  if (fotos.length > 0) {
+    const filas = [];
+    for (let i = 0; i < fotos.length; i += 2) {
+      filas.push(fotos.slice(i, i + 2));
+    }
+    fotosHTML = `
+      <div style="margin:24px 0 28px">
+        ${filas.map(fila => `
+          <div style="display:flex;gap:12px;margin-bottom:12px">
+            ${fila.map((src, idx) => `
+              <div style="flex:1;position:relative">
+                <img src="${src}" style="width:100%;height:220px;object-fit:cover;border-radius:6px;display:block;border:1px solid #dde3ee">
+                <div style="position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,0.55);color:white;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px">
+                  Foto ${fotos.indexOf(src) + 1}
+                </div>
+              </div>
+            `).join('')}
+            ${fila.length === 1 ? '<div style="flex:1"></div>' : ''}
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  // Filas de la tabla
+  const filaTabla = (label, valor, highlight=false) => `
+    <tr>
+      <td style="background:#4472C4;color:white;font-weight:700;font-size:12px;padding:10px 16px;width:30%;border:1px solid #3a62b0;font-family:Arial">${label}</td>
+      <td style="padding:10px 16px;font-size:12px;color:#1a1a1a;border:1px solid #dde3ee;background:${highlight?'#fff8e1':'white'};font-family:Arial;text-align:center">${valor}</td>
+    </tr>
+  `;
+
+  const contenido = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>${r.folio} — Observación Ambiental</title>
+      <style>
+        @media print {
+          body { margin: 0; }
+          @page { margin: 20mm 18mm; size: A4; }
+        }
+        body { font-family: Arial, sans-serif; color: #1a1a1a; background: white; margin: 0; padding: 0; }
+      </style>
+    </head>
+    <body>
+      <div style="max-width:720px;margin:0 auto;padding:32px 40px">
+
+        <!-- Header -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;border-bottom:2px solid #0D2B5E;padding-bottom:16px">
+          ${logoSVG}
+          <div style="text-align:right">
+            <div style="font-size:10px;color:#6B7B9A;font-family:Arial">Folio</div>
+            <div style="font-size:13px;font-weight:700;color:#0D2B5E;font-family:Arial">${r.folio}</div>
+            <div style="font-size:10px;color:#6B7B9A;margin-top:4px;font-family:Arial">Estatus</div>
+            <div style="font-size:12px;font-weight:700;color:${r.estatus==='cerrada'?'#16A34A':'#D97706'};font-family:Arial">
+              ${r.estatus==='cerrada'?'✓ Cerrada':'● Abierta'}
+            </div>
+          </div>
+        </div>
+
+        <!-- Título -->
+        <h1 style="text-align:center;font-size:22px;font-weight:700;color:#0D2B5E;margin:0 0 24px;font-family:Arial">
+          Observación Ambiental N°${r.folio.split('-').pop()}
+        </h1>
+
+        <!-- Fotos -->
+        ${fotosHTML}
+
+        <!-- Tabla de datos -->
+        <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+          ${filaTabla('Área', r.area)}
+          ${filaTabla('Categoría', r.tipo)}
+          ${filaTabla('Comentario', r.notas || '—')}
+          ${filaTabla('Nivel de Atención', `${prio.emoji} ${prio.nivel.toUpperCase()} / ${prio.diasLimite === 0 ? 'INMEDIATO' : prio.diasLimite + ' DÍA' + (prio.diasLimite !== 1 ? 'S' : '')}`, true)}
+          ${filaTabla('Fecha de Apertura', r.fecha + ' ' + r.hora)}
+          ${filaTabla('Fecha Límite de Cierre', fechaLimite)}
+          ${filaTabla('Fecha Real de Cierre', r.fechaCierreISO ? formatFechaISO(r.fechaCierreISO) : '—')}
+          ${filaTabla('Días de Desviación', diasDesv + ' día' + (diasDesv !== 1 ? 's' : ''))}
+        </table>
+
+        <!-- Pie de página -->
+        <div style="border-top:1px solid #dde3ee;padding-top:12px;display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:9px;color:#2B7EC1;font-weight:700;letter-spacing:0.5px;font-family:Arial">
+            HUTCHISON PORTS TNG | OBSERVACIÓN AMBIENTAL
+          </div>
+          <div style="font-size:9px;color:#9CA3AF;font-family:Arial">
+            Generado: ${new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})}
+          </div>
+        </div>
+
+      </div>
+    </body>
+    </html>
+  `;
+
+  // Abrir en nueva ventana e imprimir como PDF
+  const win = window.open('', '_blank');
+  if (!win) {
+    showToast('⚠️ Permite ventanas emergentes para generar el PDF');
+    return;
+  }
+  win.document.write(contenido);
+  win.document.close();
+  win.onload = () => {
+    setTimeout(() => {
+      win.focus();
+      win.print();
+    }, 500);
+  };
 }
 
 // =================== TOAST ===================
